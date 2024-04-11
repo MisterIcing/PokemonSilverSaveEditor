@@ -205,6 +205,16 @@
         },
         "end": 55849
     },
+    "misc" : {
+        "wild" : 53771,
+        "money" : [54643, 54644, 54645],
+        "storedMoney" : [54646, 54647, 54648],
+        "casino" : [54650, 54651],
+        "jBadges" : 54652,
+        "kBadges" : 54653,
+        "posXY" : [55810, 55811],
+        "repel" : 55787
+    },
     "convert" : {
         "0": {"pokemon": "?????", "item": "?", "move": "-"},
         "1": {"pokemon": "bulbasaur", "item": "master ball", "move": "pound"},
@@ -235,10 +245,10 @@
         "26": {"pokemon": "raichu", "item": "hp up", "move": "jump kick"},
         "27": {"pokemon": "sandshrew", "item": "protein", "move": "rolling kick"},
         "28": {"pokemon": "sandslash", "item": "iron", "move": "sand attack"},
-        "29": {"pokemon": "nidoranF", "item": "carbos", "move": "headbutt"},
+        "29": {"pokemon": "nidoranf", "item": "carbos", "move": "headbutt"},
         "30": {"pokemon": "nidorina", "item": "lucky punch", "move": "horn attack"},
         "31": {"pokemon": "nidoqueen", "item": "calcium", "move": "fury attack"},
-        "32": {"pokemon": "nidoranM", "item": "rare candy", "move": "horn drill"},
+        "32": {"pokemon": "nidoranm", "item": "rare candy", "move": "horn drill"},
         "33": {"pokemon": "nidorino", "item": "x accuracy", "move": "tackle"},
         "34": {"pokemon": "nidoking", "item": "leaf stone", "move": "body slam"},
         "35": {"pokemon": "clefairy", "item": "metal powder", "move": "wrap"},

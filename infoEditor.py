@@ -3,7 +3,7 @@ import os
 import sys
 import json
 
-saveFile = './bgb/Ace-1.sna'
+# saveFile = './bgb/Ace-1.sna'
 # saveFile = './bgb/Pokemon - Silver Version (USA, Europe) (SGB Enhanced) (GB Compatible).sav'
 # saveFile = './bgb/bgb.html'
 
@@ -22,9 +22,268 @@ with open('keyVals.json', 'r') as jsonFile:
 def main(filename: str) -> None:
     if not os.path.exists(filename) or (fileTypeData := getFileType(filename)) == fileType.unknown:
         print("Could not validate file")
-    elif fileTypeData == fileType.BGB:
-        # Sets translation offset to 0x1fa0
-        # Display inventory & Party
+
+    # Display inventory & Party
+    clearTerm()
+    invTotal = int.from_bytes(hexRead(filename, getAdjOffset(fileTypeData, addr["inventory"]["total"]), 1), byteorder='big')
+    print(f"Inventory: {invTotal}")
+    for x in range(1,21):
+        dispItemRow(filename, fileTypeData, x, x == invTotal)
+    partyTotal = int.from_bytes(hexRead(filename, getAdjOffset(fileTypeData, addr["party"]["total"]), 1), 'big')
+    print(f"Party: {partyTotal}")
+    for x in range(1,7):
+        dispPartyRow(filename, fileTypeData, x, x == partyTotal,)
+
+    # modification loop
+    while (mod := input('What would you like to modify[inventory, party, misc]: ').lower()) != 'exit':
+        # inventory editing
+        if mod == "inventory":
+            if (inp := input('Which item would you like to modify (1 to 20): ').lower()) == 'back':
+                continue
+
+            # get RAM addresses
+            itemNum = max(min(int(inp), 20), 1) #1-20
+            totalAddr = addr["inventory"]["total"]
+            itemAddr = addr["inventory"]["items"][str(itemNum)]
+
+            # adjust to SNA addresses
+            adjTotal = getAdjOffset(fileTypeData, totalAddr)
+            adjItem = getAdjOffset(fileTypeData, itemAddr[0])
+            adjQuant = getAdjOffset(fileTypeData, itemAddr[1])
+            
+            # display selected item
+            dispItemRow(filename, fileTypeData, itemNum, True)
+
+            # item change section
+            if (inp := input('New item value(int[0-255] or name): ').lower()) == 'back':
+                continue
+            # input handling
+            val = item2byte(inp)
+            if val == None:
+                continue
+            # save new bytes to file
+            hexEdit(filename, adjItem, val)
+
+            # amount change section
+            if (inp := input('New item amount(int[0-255]): ').lower()) == 'back':
+                continue
+            # input handling
+            val = int2byte(inp)
+            if val == None:
+                continue
+            # save new bytes to file
+            hexEdit(filename, adjQuant, val)
+
+            # check to expand inventory range
+            if int.from_bytes(hexRead(filename, adjTotal, 1), byteorder='big') < itemNum and int.from_bytes(hexRead(filename, adjItem, 1), 'big') != 0 and int.from_bytes(hexRead(filename, adjItem, 1), 'big') != 255:
+                # increase inventory size to number
+                hexEdit(filename, adjTotal, int.to_bytes(itemNum, 1, 'big'))
+                # add cancel to item after
+                    # values after are technically unallocated and thus allowed to be changed
+                if itemNum == 20: # "edge case"
+                    endAddr = getAdjOffset(fileTypeData, addr["inventory"]["end"])
+                    hexEdit(filename, endAddr, int.to_bytes(255, 1, 'big'))
+                else:
+                    nextAddr = getAdjOffset(fileTypeData, addr["inventory"]["items"][str(itemNum+1)][0])
+                    hexEdit(filename, nextAddr, int.to_bytes(255, 1, 'big'))
+
+            # check to shrink inventory range
+            lastValid = 0
+            for x in range(1,21):
+                item = getAdjOffset(fileTypeData, addr["inventory"]["items"][str(x)][0])
+                inByte = int.from_bytes(hexRead(filename, item, 1), 'big')
+                if inByte != 0 and inByte != 255:
+                    lastValid = x
+            # change if inv is different from current total
+            invTotal = int.from_bytes(hexRead(filename, getAdjOffset(fileTypeData, addr["inventory"]["total"]), 1), byteorder='big')
+            if lastValid != 20:
+                hexEdit(filename, adjTotal, int.to_bytes(lastValid, 1, 'big'))
+                nextAddr = getAdjOffset(fileTypeData, addr["inventory"]["items"][str(lastValid+1)][0])
+                hexEdit(filename, nextAddr, int.to_bytes(255, 1, 'big'))
+        
+        # party modification
+        if mod == "party":
+            if (pNum := input('Which pokemon would you like to modify (1 to 6): ').lower()) == 'back':
+                continue
+            
+            # get selected pokemon & disp
+            clearTerm()
+            pokeNum: int = max(min(int(pNum), 6), 1) #1-6
+            dispPartyRow(filename, fileTypeData, pokeNum, True, True)
+            
+            # prompt what to change
+            while (inp := input('[pokemon, name, hp, level, item, move #, attack, defense, speed, spAttack, spDefense]\nWhat would you like to modify: ').lower()) != 'back':
+                # change which pokemon it is
+                if inp == "pokemon":
+                    # change both positions, I think one just controls the icon
+                    if (inp := input('New pokemon(int[0-255] or name): ').lower()) != 'back':
+                        val = pkmn2byte(inp)
+                        if val == None:
+                            continue
+                        offset = [getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["pokemon"][x]) for x in range(2)]
+                        for x in range(2):
+                            hexEdit(filename, offset[x], val)
+
+                elif inp == "name":
+                    # ask for 10 letter name, encode w/\x50
+                    newName = input("New name(10 characters): ")
+                    newName = newName[:10]
+                    byteArr = toString(newName)
+                    for x in range(11):
+                        hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["name"][x]), byteArr[x])
+
+                elif inp == "hp":
+                    # change both hp & maxhp(if lower than hp)
+                    if (inp := input('New HP amount(int[0-65535])\nNote: math caps at 0x03e7(999): ').lower()) == 'back':
+                        continue
+                    # input handling
+                    val = int2byte(inp, 2)
+                    if val == None:
+                        continue
+                    # save new bytes to file
+                    hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["hp"][0]), val)
+                    hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["hpev"][0]), val)
+
+                    # increase max health to match
+                    if int.from_bytes(val, 'big') > int.from_bytes(hexRead(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["maxHp"][0]), 2), 'big'):
+                        hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["maxHp"][0]), val)
+
+                elif inp == "level":
+                    if (inp := input('New level(int[0-255]): ').lower()) == 'back':
+                        continue
+                    # input handling
+                    val = int2byte(inp)
+                    if val == None:
+                        continue
+                    # save new bytes to file
+                    hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["level"]), val)
+                    hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["exp"][0]), b'\x13\x12\xd0')
+
+                elif inp == "item":
+                    # similar to inventory editing
+                    if (inp := input('New item value(int[0-255] or name): ').lower()) == 'back':
+                        continue
+                    # input handling
+                    val = item2byte(inp)
+                    if val == None:
+                        continue
+                    # save new bytes to file
+                    hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["item"]), val)
+
+                elif inp.find("move") != -1:
+                    id = inp.split(" ")[-1] # extract move number
+                    if not id.isdigit():
+                        continue
+                    id = min(max((int(id)-1) , 0), 3) #0-3
+                    if (inp := input('New move(int[0-255] or name): ').lower()) == 'back':
+                        continue
+                    # input handling
+                    val = mov2byte(inp)
+                    if val == None:
+                        continue
+                    # save new bytes to file
+                    hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["moves"][id]), val)
+                    hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["pp"][id]), b'\x39')
+
+                elif inp == "attack":
+                    if (inp := input('New attack value(int[0-65535])\nNote: display caps at 0x03e7(999): ').lower()) == 'back':
+                        continue
+                    # input handling
+                    val = int2byte(inp, 2)
+                    if val == None:
+                        continue
+                    # save new bytes to file
+                    hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["attack"][0]), val)
+                    hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["atkev"][0]), val)
+                    hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["adiv"]), b'\xff')
+
+
+                elif inp == "defense":
+                    if (inp := input('New defense value(int[0-65535])\nNote: display caps at 0x03e7(999): ').lower()) == 'back':
+                        continue
+                    # input handling
+                    val = int2byte(inp, 2)
+                    if val == None:
+                        continue
+                    # save new bytes to file
+                    hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["defense"][0]), val)
+                    hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["defev"][0]), val)
+                    hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["adiv"]), b'\xff')
+
+                elif inp == "speed":
+                    if (inp := input('New speed value(int[0-65535])\nNote: display caps at 0x03e7(999): ').lower()) == 'back':
+                        continue
+                    # input handling
+                    val = int2byte(inp, 2)
+                    if val == None:
+                        continue
+                    # save new bytes to file
+                    hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["speed"][0]), val)
+                    hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["spdev"][0]), val)
+                    hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["sdiv"]), b'\xff')
+
+                elif inp == "spattack":
+                    if (inp := input('New special attack value(int[0-65535])\nNote: display caps at 0x03e7(999): ').lower()) == 'back':
+                        continue
+                    # input handling
+                    val = int2byte(inp, 2)
+                    if val == None:
+                        continue
+                    # save new bytes to file
+                    hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["spAttack"][0]), val)
+                    hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["spcev"][0]), val)
+                    hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["sdiv"]), b'\xff')
+
+                elif inp == "spdefense":
+                    if (inp := input('New special defense value(int[0-65535])\nNote: display caps at 0x03e7(999): ').lower()) == 'back':
+                        continue
+                    # input handling
+                    val = int2byte(inp, 2)
+                    if val == None:
+                        continue
+                    # save new bytes to file
+                    hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["spDefense"][0]), val)
+                    hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["spcev"][0]), val)
+                    hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["sdiv"]), b'\xff')
+
+                # Change max pokemon to highest edited
+                if (pNum := int(pNum)) > (partyTotal := int.from_bytes(hexRead(filename, getAdjOffset(fileTypeData, addr["party"]["total"]), 1), 'big')):
+                    hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["total"]), int.to_bytes(pNum, 1, 'big'))
+
+                # display updated info
+                clearTerm()
+                partyTotal = int.from_bytes(hexRead(filename, getAdjOffset(fileTypeData, addr["party"]["total"]), 1), 'big')
+                pokeNum: int = max(min(int(pNum), 6), 1) #1-6
+                print(f"Party: {partyTotal:1}")
+                dispPartyRow(filename, fileTypeData, pokeNum, True, True)
+
+        if mod == "misc":
+            clearTerm()
+            while (inp := input('Toggle[johto badges, kanto badges]/max[money, cached, casino, repel] which value: ').lower()) != 'back':
+                if inp.find("johto") != -1:
+                    badges = hexRead(filename, getAdjOffset(fileTypeData, addr["misc"]["jBadges"]), 1)
+                    if badges != b'\xff':
+                        hexEdit(filename, getAdjOffset(fileTypeData, addr["misc"]["jBadges"]), b'\xff')
+                    else:
+                        hexEdit(filename, getAdjOffset(fileTypeData, addr["misc"]["jBadges"]), b'\x00')
+                elif inp.find("kanto") != -1:
+                    badges = hexRead(filename, getAdjOffset(fileTypeData, addr["misc"]["kBadges"]), 1)
+                    if badges != b'\xff':
+                        hexEdit(filename, getAdjOffset(fileTypeData, addr["misc"]["kBadges"]), b'\xff')
+                    else:
+                        hexEdit(filename, getAdjOffset(fileTypeData, addr["misc"]["kBadges"]), b'\x00')
+                elif inp == "money":
+                    hexEdit(filename, getAdjOffset(fileTypeData, addr["misc"]["money"][0]), b'\xff\xff\xff')
+                elif inp == "cached":
+                    hexEdit(filename, getAdjOffset(fileTypeData, addr["misc"]["storedMoney"][0]), b'\xff\xff\xff')
+                elif inp == "casino":
+                    hexEdit(filename, getAdjOffset(fileTypeData, addr["misc"]["casino"][0]), b'\xff\xff')
+                elif inp == "repel":
+                    hexEdit(filename, getAdjOffset(fileTypeData, addr["misc"]["repel"]), b'\xff')
+                input(f"{inp.title()} maxed/toggled")
+
+        
+        # redisplay info
         clearTerm()
         invTotal = int.from_bytes(hexRead(filename, getAdjOffset(fileTypeData, addr["inventory"]["total"]), 1), byteorder='big')
         print(f"Inventory: {invTotal}")
@@ -34,236 +293,6 @@ def main(filename: str) -> None:
         print(f"Party: {partyTotal}")
         for x in range(1,7):
             dispPartyRow(filename, fileTypeData, x, x == partyTotal,)
-
-        # modification loop
-        while (mod := input('What would you like to modify[inventory, party]: ').lower()) != 'exit':
-            # inventory editing
-            if mod == "inventory":
-                if (inp := input('Which item would you like to modify (1 to 20): ').lower()) == 'back':
-                    continue
-
-                # get RAM addresses
-                itemNum = max(min(int(inp), 20), 1) #1-20
-                totalAddr = addr["inventory"]["total"]
-                itemAddr = addr["inventory"]["items"][str(itemNum)]
-
-                # adjust to SNA addresses
-                adjTotal = getAdjOffset(fileTypeData, totalAddr)
-                adjItem = getAdjOffset(fileTypeData, itemAddr[0])
-                adjQuant = getAdjOffset(fileTypeData, itemAddr[1])
-               
-                # display selected item
-                dispItemRow(filename, fileTypeData, itemNum, True)
-
-                # item change section
-                if (inp := input('New item value(int[0-255] or name): ').lower()) == 'back':
-                    continue
-                # input handling
-                val = item2byte(inp)
-                if val == None:
-                    continue
-                # save new bytes to file
-                hexEdit(filename, adjItem, val)
-
-                # amount change section
-                if (inp := input('New item amount(int[0-255]): ').lower()) == 'back':
-                    continue
-                # input handling
-                val = int2byte(inp)
-                if val == None:
-                    continue
-                # save new bytes to file
-                hexEdit(filename, adjQuant, val)
-
-                # check to expand inventory range
-                if int.from_bytes(hexRead(filename, adjTotal, 1), byteorder='big') < itemNum and int.from_bytes(hexRead(filename, adjItem, 1), 'big') != 0 and int.from_bytes(hexRead(filename, adjItem, 1), 'big') != 255:
-                    # increase inventory size to number
-                    hexEdit(filename, adjTotal, int.to_bytes(itemNum, 1, 'big'))
-                    # add cancel to item after
-                        # values after are technically unallocated and thus allowed to be changed
-                    if itemNum == 20: # "edge case"
-                        endAddr = getAdjOffset(fileTypeData, addr["inventory"]["end"])
-                        hexEdit(filename, endAddr, int.to_bytes(255, 1, 'big'))
-                    else:
-                        nextAddr = getAdjOffset(fileTypeData, addr["inventory"]["items"][str(itemNum+1)][0])
-                        hexEdit(filename, nextAddr, int.to_bytes(255, 1, 'big'))
-
-                # check to shrink inventory range
-                lastValid = 0
-                for x in range(1,21):
-                    item = getAdjOffset(fileTypeData, addr["inventory"]["items"][str(x)][0])
-                    inByte = int.from_bytes(hexRead(filename, item, 1), 'big')
-                    if inByte != 0 and inByte != 255:
-                        lastValid = x
-                # change if inv is different from current total
-                invTotal = int.from_bytes(hexRead(filename, getAdjOffset(fileTypeData, addr["inventory"]["total"]), 1), byteorder='big')
-                if lastValid != 20:
-                    hexEdit(filename, adjTotal, int.to_bytes(lastValid, 1, 'big'))
-                    nextAddr = getAdjOffset(fileTypeData, addr["inventory"]["items"][str(lastValid+1)][0])
-                    hexEdit(filename, nextAddr, int.to_bytes(255, 1, 'big'))
-            
-            # party modification
-            if mod == "party":
-                if (pNum := input('Which pokemon would you like to modify (1 to 6): ').lower()) == 'back':
-                    continue
-                
-                # get selected pokemon & disp
-                clearTerm()
-                pokeNum: int = max(min(int(pNum), 6), 1) #1-6
-                dispPartyRow(filename, fileTypeData, pokeNum, True, True)
-                
-                # prompt what to change
-                while (inp := input('[pokemon, name, hp, level, item, move #, attack, defense, speed, spAttack, spDefense]\nWhat would you like to modify: ').lower()) != 'back':
-                    # change which pokemon it is
-                    if inp == "pokemon":
-                        # change both positions, I think one just controls the icon
-                        if (inp := input('New pokemon(int[0-255] or name): ').lower()) != 'back':
-                            val = pkmn2byte(inp)
-                            if val == None:
-                                continue
-                            offset = [getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["pokemon"][x]) for x in range(2)]
-                            for x in range(2):
-                                hexEdit(filename, offset[x], val)
-
-                    elif inp == "name":
-                        # ask for 10 letter name, encode w/\x50
-                        newName = input("New name(10 characters): ")
-                        newName = newName[:10]
-                        byteArr = toString(newName)
-                        for x in range(11):
-                            hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["name"][x]), byteArr[x])
-
-                    elif inp == "hp":
-                        # change both hp & maxhp(if lower than hp)
-                        if (inp := input('New HP amount(int[0-65535])\nNote: math caps at 0x03e7(999): ').lower()) == 'back':
-                            continue
-                        # input handling
-                        val = int2byte(inp, 2)
-                        if val == None:
-                            continue
-                        # save new bytes to file
-                        hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["hp"][0]), val)
-
-                        # increase max health to match
-                        if int.from_bytes(val, 'big') > int.from_bytes(hexRead(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["maxHp"][0]), 2), 'big'):
-                            hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["maxHp"][0]), val)
-
-                    elif inp == "level":
-                        if (inp := input('New level(int[0-255]): ').lower()) == 'back':
-                            continue
-                        # input handling
-                        val = int2byte(inp)
-                        if val == None:
-                            continue
-                        # save new bytes to file
-                        hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["level"]), val)
-
-                    elif inp == "item":
-                        # similar to inventory editing
-                        if (inp := input('New item value(int[0-255] or name): ').lower()) == 'back':
-                            continue
-                        # input handling
-                        val = item2byte(inp)
-                        if val == None:
-                            continue
-                        # save new bytes to file
-                        hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["item"]), val)
-
-                    elif inp.find("move") != -1:
-                        id = inp.split(" ")[-1] # extract move number
-                        if not id.isdigit():
-                            continue
-                        id = min(max((int(id)-1) , 0), 3) #0-3
-                        if (inp := input('New move(int[0-255] or name): ').lower()) == 'back':
-                            continue
-                        # input handling
-                        val = mov2byte(inp)
-                        if val == None:
-                            continue
-                        # save new bytes to file
-                        hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["moves"][id]), val)
-                        hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["pp"][id]), b'\x39')
-
-                    elif inp == "attack":
-                        if (inp := input('New attack value(int[0-65535])\nNote: display caps at 0x03e7(999): ').lower()) == 'back':
-                            continue
-                        # input handling
-                        val = int2byte(inp, 2)
-                        if val == None:
-                            continue
-                        # save new bytes to file
-                        hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["attack"][0]), val)
-
-                    elif inp == "defense":
-                        if (inp := input('New defense value(int[0-65535])\nNote: display caps at 0x03e7(999): ').lower()) == 'back':
-                            continue
-                        # input handling
-                        val = int2byte(inp, 2)
-                        if val == None:
-                            continue
-                        # save new bytes to file
-                        hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["defense"][0]), val)
-
-                    elif inp == "speed":
-                        if (inp := input('New speed value(int[0-65535])\nNote: display caps at 0x03e7(999): ').lower()) == 'back':
-                            continue
-                        # input handling
-                        val = int2byte(inp, 2)
-                        if val == None:
-                            continue
-                        # save new bytes to file
-                        hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["speed"][0]), val)
-
-                    elif inp == "spattack":
-                        if (inp := input('New special attack value(int[0-65535])\nNote: display caps at 0x03e7(999): ').lower()) == 'back':
-                            continue
-                        # input handling
-                        val = int2byte(inp, 2)
-                        if val == None:
-                            continue
-                        # save new bytes to file
-                        hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["spAttack"][0]), val)
-
-                    elif inp == "spdefense":
-                        if (inp := input('New special defense value(int[0-65535])\nNote: display caps at 0x03e7(999): ').lower()) == 'back':
-                            continue
-                        # input handling
-                        val = int2byte(inp, 2)
-                        if val == None:
-                            continue
-                        # save new bytes to file
-                        hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["spDefense"][0]), val)
-
-                    # Change max pokemon to highest edited
-                    if (pNum := int(pNum)) > (partyTotal := int.from_bytes(hexRead(filename, getAdjOffset(fileTypeData, addr["party"]["total"]), 1), 'big')):
-                        hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["total"]), int.to_bytes(pNum, 1, 'big'))
-
-                    # display updated info
-                    clearTerm()
-                    partyTotal = int.from_bytes(hexRead(filename, getAdjOffset(fileTypeData, addr["party"]["total"]), 1), 'big')
-                    pokeNum: int = max(min(int(pNum), 6), 1) #1-6
-                    print(f"Party: {partyTotal:1}")
-                    dispPartyRow(filename, fileTypeData, pokeNum, True, True)
-                    
-            
-            # redisplay info
-            clearTerm()
-            invTotal = int.from_bytes(hexRead(filename, getAdjOffset(fileTypeData, addr["inventory"]["total"]), 1), byteorder='big')
-            print(f"Inventory: {invTotal}")
-            for x in range(1,21):
-                dispItemRow(filename, fileTypeData, x, x == invTotal)
-            partyTotal = int.from_bytes(hexRead(filename, getAdjOffset(fileTypeData, addr["party"]["total"]), 1), 'big')
-            print(f"Party: {partyTotal}")
-            for x in range(1,7):
-                dispPartyRow(filename, fileTypeData, x, x == partyTotal,)
-
-    elif fileTypeData == fileType.save:
-        # Set translation offset
-        print("Save file")
-    else:
-       print("Major error")
-       exit(1)
-    exit(0)
 
 # Function to check which type of file is being edited(save or savestate)
 def getFileType(filename):
@@ -282,6 +311,8 @@ def getAdjOffset(type: fileType, offset: int) -> int:
     # print(f"Origial Offset: {hex(offset)}")
     if type == fileType.BGB: # adjusts RAM to SNA by -0xba82
         offset = offset - 0xba82
+    elif type == fileType.save:
+        offset = offset - 0xc93c
     # print(f"New Offset: {hex(offset)}")
     return offset
 
@@ -430,6 +461,5 @@ if __name__ == '__main__':
     if len(sys.argv) >= 2:
         main(sys.argv[1])
     else:
-        # filename: str = input("Name of file to open: ")
-        main(saveFile)
-    input("Enter to exit")
+        filename: str = input("Name of file to open: ")
+        main(filename)
