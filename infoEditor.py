@@ -132,7 +132,7 @@ def main(filename: str) -> None:
 
                 elif inp == "hp":
                     # change both hp & maxhp(if lower than hp)
-                    if (inp := input('New HP amount(int[0-65535])\nNote: math caps at 0x03e7(999): ').lower()) == 'back':
+                    if (inp := input('New HP amount(int[0-65535]): ').lower()) == 'back':
                         continue
                     # input handling
                     val = int2byte(inp, 2)
@@ -268,7 +268,7 @@ def main(filename: str) -> None:
                     # save new bytes to file
                     hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["spDefense"][0], filename), val)
                 elif inp == "spcev":
-                    if (inp := input('New special EV value(int[0-65535]): ').lower()) == 'back':
+                    if (inp := input('New special EV(int[0-65535]): ').lower()) == 'back':
                         continue
                     # input handling
                     val = int2byte(inp, 2)
@@ -514,7 +514,7 @@ def int2byte(inp, byteSize=1) -> bytes | None:
 
 # Function to edit the hex at the offset
 # Assumes data fits correctly to what should change
-def hexEdit(filename: str, offset: int, data: int) -> None:
+def hexEdit(filename: str, offset: int, data: bytes) -> None:
     with open(filename, 'r+b') as file:
         file.seek(offset)
         file.write(data)
