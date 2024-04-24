@@ -10,6 +10,8 @@
 	- Typing `back` in sub sections should return to previous section prompt
 	- Typing `exit` in the main menu will exit the program
 		- There is the tried and true `ctrl+c` as well
+- Inventory
+	- Switch bag using `next` or `prev` on main menu
 
 # General Gameboy
 - [Opcodes](https://www.pastraiser.com/cpu/gameboy/gameboy_opcodes.html)
@@ -52,7 +54,7 @@
 		- Item 20: `0xd5de-0xd5df`
 	- `0xd5e0`: End of items %% Set 0xd5d3 to FF for cancel %%
 - Key Items %% No amount of item %%
-	- % 2nd offset set to 0 bc value is irrelevant
+	- % 2nd offset set to 0 bc value is irrelevant, so disregard amount
 	- `0xd5e1`: Total keys
 	- `0xd5e2-0xd5fa`: key items
 	- `0xd5fb`: End of keys

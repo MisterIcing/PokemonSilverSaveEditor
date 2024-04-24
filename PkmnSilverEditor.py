@@ -10,7 +10,8 @@ class fileType(Enum):
     unknown = 3
 
 # List of bags to select from
-bags = ["items", "balls", "stored", "keys"]
+bags = ["items", "balls", "keys", "tm", "hm", "stored"]
+global currentBag
 
 # read in important values from JSON
 with open('keyVals.json', 'r') as jsonFile:
@@ -27,7 +28,7 @@ def main(filename: str) -> None:
     clearTerm()
     invTotal = int.from_bytes(hexRead(filename, getAdjOffset(fileTypeData, addr["inventory"][bags[currentBag]]["total"], filename), 1), byteorder='big')
     invSize = len(addr["inventory"][bags[currentBag]])-2
-    print(f"Inventory: {invTotal}")
+    print(f"{bags[currentBag].title()} Bag: {invTotal}")
     for x in range(1,invSize+1):
         dispItemRow(filename, fileTypeData, x, x == invTotal, bags[currentBag])
     partyTotal = int.from_bytes(hexRead(filename, getAdjOffset(fileTypeData, addr["party"]["total"], filename), 1), 'big')
@@ -36,7 +37,7 @@ def main(filename: str) -> None:
         dispPartyRow(filename, fileTypeData, x, x == partyTotal)
 
     # modification loop
-    while (mod := input('What would you like to modify[inventory, party, misc]: ').lower()) != 'exit':
+    while (mod := input('Shift bags[next, prev]\nWhat would you like to modify[inventory, party, misc]: ').lower()) != 'exit':
         # inventory editing
         if mod == "inventory":
             if (inp := input(f'Which item would you like to modify[1-{invSize}]: ').lower()) == 'back':
@@ -56,14 +57,15 @@ def main(filename: str) -> None:
             dispItemRow(filename, fileTypeData, itemNum, True, bags[currentBag])
 
             # item change section
-            if (inp := input('New item value(int[0-255] or string): ').lower()) == 'back':
-                continue
-            # input handling
-            val = item2byte(inp)
-            if val == None:
-                continue
-            # save new bytes to file
-            hexEdit(filename, adjItem, val)
+            if  itemAddr[0] != None: # exlusive to hm/tm bags
+                if (inp := input('New item value(int[0-255] or string): ').lower()) == 'back':
+                    continue
+                # input handling
+                val = item2byte(inp)
+                if val == None:
+                    continue
+                # save new bytes to file
+                hexEdit(filename, adjItem, val)
 
             # amount change section
             if itemAddr[1] != None: # exlusive to keys bag
@@ -104,7 +106,7 @@ def main(filename: str) -> None:
                 hexEdit(filename, nextAddr, int.to_bytes(255, 1, 'big'))
         
         # party modification
-        if mod == "party":
+        elif mod == "party":
             if (pNum := input('Which pokemon would you like to modify[1-6]: ').lower()) == 'back':
                 continue
             
@@ -318,7 +320,8 @@ def main(filename: str) -> None:
                 print(f"Party: {partyTotal:1}")
                 dispPartyRow(filename, fileTypeData, pokeNum, True, True)
 
-        if mod == "misc":
+        # misc values to edit
+        elif mod == "misc":
             clearTerm()
             while (inp := input('Toggle[johto badges, kanto badges]/max[money, cached, casino, repel, fly]/mod[pos] which value: ').lower()) != 'back':
                 if inp.find("johto") != -1:
@@ -355,12 +358,17 @@ def main(filename: str) -> None:
                         hexEdit(filename, getAdjOffset(fileTypeData, addr["misc"]["posXY"][0], filename), int2byte(str(int.from_bytes(hexRead(filename, getAdjOffset(fileTypeData, addr["misc"]["posXY"][0], filename), 1), 'big')+1)))
                 input(f"{inp.title()} toggled/maxed/modified")
 
+        # rotate bags
+        elif mod == "next":
+            currentBag = (currentBag+1) % len(bags)
+        elif mod == "prev":
+            currentBag = (currentBag-1) % len(bags)
         
         # redisplay info
         clearTerm()
         invTotal = int.from_bytes(hexRead(filename, getAdjOffset(fileTypeData, addr["inventory"][bags[currentBag]]["total"], filename), 1), byteorder='big')
         invSize = len(addr["inventory"][bags[currentBag]])-2
-        print(f"Inventory: {invTotal}")
+        print(f"{bags[currentBag].title()} Bag: {invTotal}")
         for x in range(1,invSize+1):
             dispItemRow(filename, fileTypeData, x, x == invTotal, bags[currentBag])
         partyTotal = int.from_bytes(hexRead(filename, getAdjOffset(fileTypeData, addr["party"]["total"], filename), 1), 'big')
@@ -402,7 +410,18 @@ def dispItemRow(filename, type, itemNum, arrow: bool=False, currBag: str="items"
 
     # get converted item name
     itemConv = addr["convert"][str(int.from_bytes(hexRead(filename, getAdjOffset(type, addr["inventory"][currBag][str(itemNum)][0], filename), 1), byteorder='big'))]["item"]
-    print(f"{'->' if arrow else ''}\tItem {itemNum:2}: {itemHex:4}({itemConv.title():^14}) Amount: {itemQuant:4}")
+
+    # Keys bag
+    if currBag == "keys":
+        print(f"{'->' if arrow else ''}\tItem {itemNum:2}: {itemHex:4}({itemConv.title():^14})")
+    # Standard bags
+    elif currBag != "tm" and currBag != "hm":
+        print(f"{'->' if arrow else ''}\tItem {itemNum:2}: {itemHex:4}({itemConv.title():^14}) Amount: {itemQuant:4}")
+    # tm/hm bags
+    else:
+        adjNum = itemNum + 190 if itemNum < 5 else itemNum + 191 if itemNum < 29 else itemNum + 192
+        mConv = addr["convert"][str(adjNum)]["tmname"] if currBag == "tm" else addr["convert"][str(itemNum + 242)]["hmname"]
+        print(f"{'->' if arrow else ''}\t{currBag.title()} {itemNum:2}: {hex(itemNum):4}({mConv.title():^14}) Amount: {itemQuant:4}")
 
 # Displays single row for party table or pokemon display
 def dispPartyRow(filename, type, pokeNum, arrow: bool=False, extended: bool=False):
