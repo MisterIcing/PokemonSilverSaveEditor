@@ -6,4 +6,6 @@
 bgb*.gb
 *.zip
 *.rtc
-**/*.sav
+SaveStates/*
+Saves/*
+bgb/*

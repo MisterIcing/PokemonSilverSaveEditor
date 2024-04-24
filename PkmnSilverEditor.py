@@ -9,6 +9,9 @@ class fileType(Enum):
     save = 2
     unknown = 3
 
+# List of bags to select from
+bags = ["items", "balls", "stored", "keys"]
+
 # read in important values from JSON
 with open('keyVals.json', 'r') as jsonFile:
     addr = json.load(jsonFile)
@@ -19,28 +22,30 @@ def main(filename: str) -> None:
     if not os.path.exists(filename) or (fileTypeData := getFileType(filename)) == fileType.unknown:
         print("Could not validate file")
 
+    currentBag = 0
     # Display inventory & Party
     clearTerm()
-    invTotal = int.from_bytes(hexRead(filename, getAdjOffset(fileTypeData, addr["inventory"]["total"], filename), 1), byteorder='big')
+    invTotal = int.from_bytes(hexRead(filename, getAdjOffset(fileTypeData, addr["inventory"][bags[currentBag]]["total"], filename), 1), byteorder='big')
+    invSize = len(addr["inventory"][bags[currentBag]])-2
     print(f"Inventory: {invTotal}")
-    for x in range(1,21):
-        dispItemRow(filename, fileTypeData, x, x == invTotal)
+    for x in range(1,invSize+1):
+        dispItemRow(filename, fileTypeData, x, x == invTotal, bags[currentBag])
     partyTotal = int.from_bytes(hexRead(filename, getAdjOffset(fileTypeData, addr["party"]["total"], filename), 1), 'big')
     print(f"Party: {partyTotal}")
     for x in range(1,7):
-        dispPartyRow(filename, fileTypeData, x, x == partyTotal,)
+        dispPartyRow(filename, fileTypeData, x, x == partyTotal)
 
     # modification loop
     while (mod := input('What would you like to modify[inventory, party, misc]: ').lower()) != 'exit':
         # inventory editing
         if mod == "inventory":
-            if (inp := input('Which item would you like to modify (1 to 20): ').lower()) == 'back':
+            if (inp := input(f'Which item would you like to modify[1-{invSize}]: ').lower()) == 'back':
                 continue
 
             # get RAM addresses
-            itemNum = max(min(int(inp), 20), 1) #1-20
-            totalAddr = addr["inventory"]["total"]
-            itemAddr = addr["inventory"]["items"][str(itemNum)]
+            itemNum = max(min(int(inp), invSize), 1) #1-invSize
+            totalAddr = addr["inventory"][bags[currentBag]]["total"]
+            itemAddr = addr["inventory"][bags[currentBag]][str(itemNum)]
 
             # adjust to SNA addresses
             adjTotal = getAdjOffset(fileTypeData, totalAddr, filename)
@@ -48,10 +53,10 @@ def main(filename: str) -> None:
             adjQuant = getAdjOffset(fileTypeData, itemAddr[1], filename)
             
             # display selected item
-            dispItemRow(filename, fileTypeData, itemNum, True)
+            dispItemRow(filename, fileTypeData, itemNum, True, bags[currentBag])
 
             # item change section
-            if (inp := input('New item value(int[0-255] or name): ').lower()) == 'back':
+            if (inp := input('New item value(int[0-255] or string): ').lower()) == 'back':
                 continue
             # input handling
             val = item2byte(inp)
@@ -61,14 +66,15 @@ def main(filename: str) -> None:
             hexEdit(filename, adjItem, val)
 
             # amount change section
-            if (inp := input('New item amount(int[0-255]): ').lower()) == 'back':
-                continue
-            # input handling
-            val = int2byte(inp)
-            if val == None:
-                continue
-            # save new bytes to file
-            hexEdit(filename, adjQuant, val)
+            if itemAddr[1] != None: # exlusive to keys bag
+                if (inp := input('New item amount(int[0-255]): ').lower()) == 'back':
+                    continue
+                # input handling
+                val = int2byte(inp)
+                if val == None:
+                    continue
+                # save new bytes to file
+                hexEdit(filename, adjQuant, val)
 
             # check to expand inventory range
             if int.from_bytes(hexRead(filename, adjTotal, 1), byteorder='big') < itemNum and int.from_bytes(hexRead(filename, adjItem, 1), 'big') != 0 and int.from_bytes(hexRead(filename, adjItem, 1), 'big') != 255:
@@ -76,30 +82,30 @@ def main(filename: str) -> None:
                 hexEdit(filename, adjTotal, int.to_bytes(itemNum, 1, 'big'))
                 # add cancel to item after
                     # values after are technically unallocated and thus allowed to be changed
-                if itemNum == 20: # "edge case"
-                    endAddr = getAdjOffset(fileTypeData, addr["inventory"]["end"], filename)
+                if itemNum == invSize: # "edge case"
+                    endAddr = getAdjOffset(fileTypeData, addr["inventory"][bags[currentBag]]["end"], filename)
                     hexEdit(filename, endAddr, int.to_bytes(255, 1, 'big'))
                 else:
-                    nextAddr = getAdjOffset(fileTypeData, addr["inventory"]["items"][str(itemNum+1)][0], filename)
+                    nextAddr = getAdjOffset(fileTypeData, addr["inventory"][bags[currentBag]][str(itemNum+1)][0], filename)
                     hexEdit(filename, nextAddr, int.to_bytes(255, 1, 'big'))
 
             # check to shrink inventory range
             lastValid = 0
-            for x in range(1,21):
-                item = getAdjOffset(fileTypeData, addr["inventory"]["items"][str(x)][0], filename)
+            for x in range(1,invSize+1):
+                item = getAdjOffset(fileTypeData, addr["inventory"][bags[currentBag]][str(x)][0], filename)
                 inByte = int.from_bytes(hexRead(filename, item, 1), 'big')
                 if inByte != 0 and inByte != 255:
                     lastValid = x
             # change if inv is different from current total
-            invTotal = int.from_bytes(hexRead(filename, getAdjOffset(fileTypeData, addr["inventory"]["total"], filename), 1), byteorder='big')
-            if lastValid != 20:
+            invTotal = int.from_bytes(hexRead(filename, getAdjOffset(fileTypeData, addr["inventory"][bags[currentBag]]["total"], filename), 1), byteorder='big')
+            if lastValid != invSize:
                 hexEdit(filename, adjTotal, int.to_bytes(lastValid, 1, 'big'))
-                nextAddr = getAdjOffset(fileTypeData, addr["inventory"]["items"][str(lastValid+1)][0], filename)
+                nextAddr = getAdjOffset(fileTypeData, addr["inventory"][bags[currentBag]][str(lastValid+1)][0], filename)
                 hexEdit(filename, nextAddr, int.to_bytes(255, 1, 'big'))
         
         # party modification
         if mod == "party":
-            if (pNum := input('Which pokemon would you like to modify (1 to 6): ').lower()) == 'back':
+            if (pNum := input('Which pokemon would you like to modify[1-6]: ').lower()) == 'back':
                 continue
             
             # get selected pokemon & disp
@@ -114,7 +120,7 @@ def main(filename: str) -> None:
                 # change which pokemon it is
                 if inp == "pokemon":
                     # change both positions, I think one just controls the icon
-                    if (inp := input('New pokemon(int[0-255] or name): ').lower()) != 'back':
+                    if (inp := input('New pokemon(int[0-255] or string): ').lower()) != 'back':
                         val = pkmn2byte(inp)
                         if val == None:
                             continue
@@ -156,7 +162,7 @@ def main(filename: str) -> None:
                     # save new bytes to file
                     hexEdit(filename, getAdjOffset(fileTypeData, addr["party"]["party"][str(pokeNum)]["level"], filename), val)
                 elif inp == "exp":
-                    if (inp := input('New exp(int[0-16777215])\nNote: Level 100 is 0x0f4240(1000000): ').lower()) == 'back':
+                    if (inp := input('New exp(int[0-16777215])\nNote: Level 100 is about 0x0f4240(1000000): ').lower()) == 'back':
                         continue
                     # input handling
                     val = int2byte(inp, 3)
@@ -167,7 +173,7 @@ def main(filename: str) -> None:
 
                 elif inp == "item":
                     # similar to inventory editing
-                    if (inp := input('New item value(int[0-255] or name): ').lower()) == 'back':
+                    if (inp := input('New item value(int[0-255] or string): ').lower()) == 'back':
                         continue
                     # input handling
                     val = item2byte(inp)
@@ -181,7 +187,7 @@ def main(filename: str) -> None:
                     if not id.isdigit():
                         continue
                     id = min(max((int(id)-1) , 0), 3) #0-3
-                    if (inp := input('New move(int[0-255] or name): ').lower()) == 'back':
+                    if (inp := input('New move(int[0-255] or string): ').lower()) == 'back':
                         continue
                     # input handling
                     val = mov2byte(inp)
@@ -352,14 +358,15 @@ def main(filename: str) -> None:
         
         # redisplay info
         clearTerm()
-        invTotal = int.from_bytes(hexRead(filename, getAdjOffset(fileTypeData, addr["inventory"]["total"], filename), 1), byteorder='big')
+        invTotal = int.from_bytes(hexRead(filename, getAdjOffset(fileTypeData, addr["inventory"][bags[currentBag]]["total"], filename), 1), byteorder='big')
+        invSize = len(addr["inventory"][bags[currentBag]])-2
         print(f"Inventory: {invTotal}")
-        for x in range(1,21):
-            dispItemRow(filename, fileTypeData, x, x == invTotal)
+        for x in range(1,invSize+1):
+            dispItemRow(filename, fileTypeData, x, x == invTotal, bags[currentBag])
         partyTotal = int.from_bytes(hexRead(filename, getAdjOffset(fileTypeData, addr["party"]["total"], filename), 1), 'big')
         print(f"Party: {partyTotal}")
         for x in range(1,7):
-            dispPartyRow(filename, fileTypeData, x, x == partyTotal,)
+            dispPartyRow(filename, fileTypeData, x, x == partyTotal)
 
 # Function to check which type of file is being edited(save or savestate)
 def getFileType(filename):
@@ -375,25 +382,26 @@ def getFileType(filename):
     
 # Function to get adjusted offset whether it is a save state or save file
 def getAdjOffset(type: fileType, offset: int, filename) -> int:
-    # print(f"Origial Offset: {hex(offset)}")
-    # print(f"WRAM start: {hex(hexFind(filename, 'WRAM'))}")
+    # Ball bag uses null since there is no amount val
+    if offset == None:
+        return 0
+
     if type == fileType.BGB: # adjusts RAM to SNA
         offset = (offset - 0xc000) + (hexFind(filename, "WRAM")+0x9)
     elif type == fileType.save:
         offset = offset - 0xc93c
-    # print(f"New Offset: {hex(offset)}")
     return offset
 
 # Displays single row for item table or item display
-def dispItemRow(filename, type, itemNum, arrow: bool=False) -> None:
+def dispItemRow(filename, type, itemNum, arrow: bool=False, currBag: str="items") -> None:
     # get the item's hex value
-    itemHex = hex(int.from_bytes(hexRead(filename, getAdjOffset(type, addr["inventory"]["items"][str(itemNum)][0], filename), 1), byteorder='big'))
+    itemHex = hex(int.from_bytes(hexRead(filename, getAdjOffset(type, addr["inventory"][currBag][str(itemNum)][0], filename), 1), byteorder='big'))
 
     # get the item's quantity
-    itemQuant = hex(int.from_bytes(hexRead(filename, getAdjOffset(type, addr["inventory"]["items"][str(itemNum)][1], filename), 1), byteorder='big'))
+    itemQuant = hex(int.from_bytes(hexRead(filename, getAdjOffset(type, addr["inventory"][currBag][str(itemNum)][1], filename), 1), byteorder='big'))
 
-    # 
-    itemConv = addr["convert"][str(int.from_bytes(hexRead(filename, getAdjOffset(type, addr["inventory"]["items"][str(itemNum)][0], filename), 1), byteorder='big'))]["item"]
+    # get converted item name
+    itemConv = addr["convert"][str(int.from_bytes(hexRead(filename, getAdjOffset(type, addr["inventory"][currBag][str(itemNum)][0], filename), 1), byteorder='big'))]["item"]
     print(f"{'->' if arrow else ''}\tItem {itemNum:2}: {itemHex:4}({itemConv.title():^14}) Amount: {itemQuant:4}")
 
 # Displays single row for party table or pokemon display
