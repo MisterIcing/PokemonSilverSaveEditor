@@ -28,6 +28,7 @@
 	- `0xd20e`: Y position %% inc down%%
 	- % Use to move player onto other character & move
 - Can be used to get onto magnet train w/o repairing
+	- % Enter on left side of train
 ## Inventory
 - Items
 	- `0xd5b7`: Total items
@@ -68,13 +69,17 @@
 	- `0xd617-0xd618`: [item 1, amount]
 	- `0xd619-0xd67a`: 49 other items
 	- `0xd67b`: End of Stored
+- TM/HMs
+	- % Only sets amount
+	- `0xd57e-0xd5af`: TM's
+	- `0xd5b0-0xd5b6`: HM's %% Only needs amnt > 0 %%
 ## Party
 - Pokemon Party
 	- `0xda22`: # of pokemon [01]
-	- `0xda23-0xda28`: pokemon [hex of universal number]
+	- `0xda23-0xda28`: pokemon [hex of universal number] %% Determines pokemon weaknesses, moveset, etc %%
 	- `0xda29`: end of party, just set to `0xff`
 	- Pokemon 1 info [Cyndaquil]
-		- `0xda2a`: Pokemon [9b]
+		- `0xda2a`: Pokemon [9b] %% Determines sprite in combat %%
 		- `0xda2b`: Item held [ad]
 		- `0xda2c-0xda2f`: Moves [21 2b 00 00]
 		- `0xda30-0xda31`: ID num [05 69] %% Dont think this determines anything in Gen 2 %%
@@ -156,6 +161,7 @@
 		- `0x20`: Chuck
 		- `0x40`: Pyrce
 		- `0x80`: Clair
+		- % Johto badges are the only ones to dictate HM use
 	- Kanto: `0xd57d` %% Although in Kanto & defeated Brock, ID didnt switch so assumes Soul Silver ordering %%
 		- `0x01`: Brock
 		- `0x02`: Misty
@@ -164,7 +170,7 @@
 		- `0x10`: Janine
 		- `0x20`: Sabrina
 		- `0x40`: Blaine
-		- `0x80`: Blue %% Viridian was empty when I went :| %%
+		- `0x80`: Blue %% Viridian was empty when we went :| %%
 	- | Only battles if you do not have the badge
 		- Toggling the badge off allows you to repeat the fight
 		- Toggling the badge on allows you to skip the battle and get the reward
@@ -175,8 +181,8 @@
 		- Or to Mt. Silver's Pokemon center to Johto
 	- `0xd9ee-0xd9f1`: Fly locations
 		- % Uses bit flags, but easier to just brute force with `0xff`
-- | I keep skipping the part where I get a pokedex, so I do not know what values control the seen/captured
-	- I also skip a lot of battles so Im not helping myself
+- | We keep skipping the part where we get a pokedex, so we do not know what values control the seen/captured
+	- We also skip a lot of battles so Im not helping myself
 # Save Manipulation Data
 ## Save State (SNA)
 - Inventory `0xd5b7` -> `0x1b35`
