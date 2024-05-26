@@ -216,4 +216,9 @@
 ## Save File (SAV)
 - Player Name: `0x1210-0x1217`
 - Pokemon 1 Name: `0x1250-0x125c`
-- @ Future
+- `0xc3a0`: start of save file in WRAM
+- Save State to Save to WRAM
+	- Unknown(`0x104`): `0x091e` -> `0x0000` -> `0xc3a0`
+	- Unknown(`0xa`): ? -> `0x104` -> ?
+		- % Possibly a name(rivals?) based on size
+	- 

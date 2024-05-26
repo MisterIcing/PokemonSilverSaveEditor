@@ -9,3 +9,4 @@ bgb*.gb
 SaveStates/*
 Saves/*
 bgb/*
+__pycache__
